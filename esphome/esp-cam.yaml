@@ -121,35 +121,8 @@ light:
     id: led_rgb_pcb
     variant: WS2812
     restore_mode: RESTORE_DEFAULT_OFF
-
-# i2s_audio:
-#   i2s_lrclk_pin: GPIO36  # Word Select (LRCLK)
-#   i2s_bclk_pin: GPIO35   # Bit Clock (BCLK)
-#   i2s_mclk_pin: GPIO39   # Master Clock (MCLK)
-#   # i2s_din_pin: GPIO34    # Data In (DIN)
-
-# microphone:
-#   - platform: i2s_audio
-#     id: external_mic
-#     adc_type: internal
-#     channel: left
-#     pdm: True
-
-i2s_audio:
-  id: my_audio
-  i2s_lrclk_pin: GPIO36 #<WS_PIN>
-  i2s_dout_pin: GPIO35 #<SD_PIN>
-  i2s_bclk_pin: GPIO36 #<SCK_PIN>
-
+    
 sensor:
-  - platform: i2s_audio
-    name: "Microphone"
-    update_interval: 1s
-    audio_id: my_audio
-    sample_rate: 16000
-    bits_per_sample: 16
-    channel: LEFT
-
 # will show the Uptime for the card if you're interested
   - platform: uptime
     name: 'Uptime'
