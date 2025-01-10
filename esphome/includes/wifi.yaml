@@ -1,0 +1,16 @@
+# Multiple networks with DHCP
+wifi:
+  id: wifi_component
+#   output_power: 8.5dB
+#   fast_connect: True
+  networks:
+  - ssid: !secret primary_wifi_ssid
+    password: !secret primary_wifi_password
+  - ssid: !secret alternative_wifi_ssid
+    password: !secret alternative_wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "${friendly_name}"
+    password: !secret fallback_ap_password
+
