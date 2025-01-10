@@ -1,1 +1,444 @@
+external_components:
+  - source:
+      type: git
+      url: https://github.com/Rudd-O/esphome_freenove_camera_component
+    components: [ esp32_camera ]
 
+substitutions:
+  name: esp32-s3-n16r8-cam
+  friendly_name: ESP32-S3 CAMERA
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  comment: EPS32-S3 Camera with RGB
+  name_add_mac_suffix: False
+  on_loop:
+    - lambda: |-
+        if(id(wifi_component).is_connected()) {
+          if (id(espcam_update)) {
+            id(espcam).update_camera_parameters();
+            if(id(_debug)) { id(espcam).dump_config(); }
+            id(espcam_update) = false;
+          }
+        }
+
+esp32:
+  board: esp32-s3-devkitc-1
+  variant: ESP32S3
+  flash_size: 16MB
+  framework:
+    type: arduino
+    version: 2.0.7  # needed for this board.
+
+packages:
+  common: !include includes/common.yaml
+  wifi_sensors: !include includes/wifi.yaml
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: !secret esp_cam_01_key
+
+globals:
+# the debug parameter determines whether a config dump is done after making changes
+# this is helpful when doing initial setup, but once everything is working, I turn it off
+  - id: _debug
+    type: bool
+    initial_value: 'true'
+# value to track if camera parameters have been changed
+#   used to trigger the loop() code inserted in 'esphome' section above
+  - id: espcam_update
+    type: bool
+    initial_value: 'false'
+
+# setup the esp32_camera components initial parameters
+esp32_camera:
+  id: espcam
+  name: "ESP32-S3 OV2640 Camera"
+  external_clock:
+    pin: GPIO10  # XCLK
+    frequency: 20MHz  
+  i2c_pins:
+    sda: GPIO21  # SDA (SIOD)
+    scl: GPIO14  # SCL (SIOC)
+  data_pins:
+    - GPIO5  # D0
+    - GPIO3  # D1
+    - GPIO2  # D2
+    - GPIO4  # D3
+    - GPIO6  # D4
+    - GPIO8  # D5
+    - GPIO9  # D6
+    - GPIO11  # D7
+  vsync_pin: GPIO13  # VSYNC
+  href_pin: GPIO12   # HREF
+  pixel_clock_pin: GPIO7  # PCLK
+  resolution: 800x600 # my default
+  #resolution: 320X240 # for testing, quicker screen reactions
+  jpeg_quality: 10
+  max_framerate: 10fps
+  idle_framerate: 0.1fps
+
+  # The following parameters can be changed on the fly after the camera is started
+  #  by calling update_camera_parameters() in lambda
+  vertical_flip: false
+  horizontal_mirror: true
+  contrast: 0
+  brightness: 0
+  saturation: 0
+  special_effect: NONE
+  # exposure settings
+  aec_mode: AUTO
+  aec2: False
+  ae_level: 0
+  aec_value: 300
+  # gain settings
+  agc_mode: AUTO
+  agc_gain_ceiling: 2X
+  agc_value: 0
+  # white balance setting
+  wb_mode: AUTO
+  # test pattern
+  test_pattern: False
+
+# if you want to stream images use this and add a picture card using this devices IP:Port for the image_url
+esp32_camera_web_server:
+  - port: 8080
+    mode: stream
+  - port: 8081
+    mode: snapshot
+
+status_led:
+  pin: GPIO34
+
+light:
+  - platform: neopixelbus
+    pin: GPIO33
+    num_leds: 1
+    type: GRB
+    name: "LED RGB on PCB"
+    id: led_rgb_pcb
+    variant: WS2812
+    restore_mode: RESTORE_DEFAULT_OFF
+
+# i2s_audio:
+#   i2s_lrclk_pin: GPIO36  # Word Select (LRCLK)
+#   i2s_bclk_pin: GPIO35   # Bit Clock (BCLK)
+#   i2s_mclk_pin: GPIO39   # Master Clock (MCLK)
+#   # i2s_din_pin: GPIO34    # Data In (DIN)
+
+# microphone:
+#   - platform: i2s_audio
+#     id: external_mic
+#     adc_type: internal
+#     channel: left
+#     pdm: True
+
+i2s_audio:
+  id: my_audio
+  i2s_lrclk_pin: GPIO36 #<WS_PIN>
+  i2s_dout_pin: GPIO35 #<SD_PIN>
+  i2s_bclk_pin: GPIO36 #<SCK_PIN>
+
+sensor:
+  - platform: i2s_audio
+    name: "Microphone"
+    update_interval: 1s
+    audio_id: my_audio
+    sample_rate: 16000
+    bits_per_sample: 16
+    channel: LEFT
+
+# will show the Uptime for the card if you're interested
+  - platform: uptime
+    name: 'Uptime'
+    update_interval: 15s
+# shows the Wifi signal strength in dB (decibels)
+  - platform: wifi_signal
+    name: "WiFi Signal"
+    update_interval: 60s
+
+binary_sensor:
+# shows the wifi status of the ESP32 Camera
+  - platform: status
+    name: "Status"
+
+
+button:
+# enable a Factory Reset button if you want one
+  - platform: factory_reset
+    id: factory_reset_button
+    name: "Factory reset"
+# enable a reboot button
+  - platform: restart
+    name: "Restart"
+# enable a 'safe mode' reboot button
+  - platform: safe_mode
+    name: "Safe Mode"
+
+text_sensor:
+# Add text output for Wifi Info
+  - platform: wifi_info
+    ip_address:
+      name: "Wifi Info: IP Address"
+    ssid:
+      name: "Wifi Info: SSID"
+    bssid:
+      name: "Wifi Info: BSSID"
+    mac_address:
+      name: "Wifi Info: MAC Address"
+    dns_address:
+      name: "Wifi Info: DNS Address"
+
+# create switches for turning a parameter on or off
+switch:
+# on/off switch for Vertical Flip (my default = off, therefore: RESTORE_DEFAULT_OFF)
+  - platform: template
+    name: "Vertical Flip"
+    id: v_flip
+    icon: mdi:swap-vertical
+    restore_mode: RESTORE_DEFAULT_OFF
+    optimistic: true
+    turn_on_action:
+      lambda: |-
+        id(espcam).set_vertical_flip(true);
+        id(espcam_update) = true;
+    turn_off_action:
+      lambda: |-
+        id(espcam).set_vertical_flip(false);
+        id(espcam_update) = true;
+# on/off switch for Horizontal Mirror (my default = on, therefore: RESTORE_DEFAULT_ON)
+  - platform: template
+    name: "Horizontal Mirror"
+    id: h_mirror
+    icon: mdi:reflect-horizontal
+    restore_mode: RESTORE_DEFAULT_ON
+    optimistic: true
+    turn_on_action:
+      lambda: |-
+        id(espcam).set_horizontal_mirror(true);
+        id(espcam_update) = true;
+    turn_off_action:
+      lambda: |-
+        id(espcam).set_horizontal_mirror(false);
+        id(espcam_update) = true;
+# on/off switch for Auto Exposure 2 (my default = off, therefore: RESTORE_DEFAULT_OFF)
+  - platform: template
+    name: "Auto Exposure 2"
+    id: aec_2
+    icon: mdi:auto-fix
+    restore_mode: RESTORE_DEFAULT_OFF
+    optimistic: true
+    turn_on_action:
+      lambda: |-
+        id(espcam).set_aec2(true);
+        id(espcam_update) = true;
+    turn_off_action:
+      lambda: |-
+        id(espcam).set_aec2(false);
+        id(espcam_update) = true;
+
+# configure selects (aka dropdowns or option lists) for these parameters to make them available in HA
+select:
+# while you can change the frame_size (aka resolution) value while the camera is running, it will have no effect
+#  - see the note in the esp32_camera section above about the first 5 image parameters
+# I left this here in case it ever starts working
+  # - platform: template
+  #   name: "Resolution"
+  #   id: res
+  #   options:
+  #     - "160x120"
+  #     - "176x144"
+  #     - "240x176"
+  #     - "320x240"
+  #     - "400x296"
+  #     - "640x480"
+  #     - "800x600"
+  #     - "1024x768"
+  #     - "1280x1024"
+  #     - "1600x1200"
+  #   initial_option: "800x600"
+  #   optimistic: True
+  #   restore_value: True
+  #   on_value:
+  #     - lambda: |-
+  #         id(espcam).set_frame_size((esphome::esp32_camera::ESP32CameraFrameSize)id(res).active_index().value());
+  #         // some function to change the frame_size
+  #         id(espcam_update) = true;
+# Option list for Special Effects
+  - platform: template
+    name: "Special Effects"
+    icon: mdi:filter
+    id: effect
+    options:
+      - "None"
+      - "Negative"
+      - "Grayscale"
+      - "Red Tint"
+      - "Green Tint"
+      - "Blue Tint"
+      - "Sepia"
+    initial_option: "None"
+    optimistic: True
+    on_value:
+      lambda: |-
+        id(espcam).set_special_effect((esphome::esp32_camera::ESP32SpecialEffect)id(effect).active_index().value());
+        id(espcam_update) = true;
+# Option List for White Balance
+  - platform: template
+    name: "White Balance Mode"
+    id: wb
+    icon: mdi:white-balance-auto
+    options:
+      - "Auto"
+      - "Sunny"
+      - "Cloudy"
+      - "Office"
+      - "Home"
+    initial_option: "Auto"
+    optimistic: True
+    on_value:
+      lambda: |-
+        id(espcam).set_wb_mode((esphome::esp32_camera::ESP32WhiteBalanceMode)id(wb).active_index().value());
+        id(espcam_update) = true;
+# Option list for AEC mode
+  - platform: template
+    name: "Auto Exposure Mode"
+    id: aec
+    icon: mdi:auto-fix
+    options:
+      - "Manual"
+      - "Auto"
+    initial_option: "Auto"
+    optimistic: True
+    on_value:
+      lambda: |-
+        // if you're looking closely, you may notice that AEC uses the Enum defined for Gain_control.
+        // this is how it is defined in the component source code since they both only have "auto" & "manual"
+        id(espcam).set_aec_mode((esphome::esp32_camera::ESP32GainControlMode)id(aec).active_index().value());
+        id(espcam_update) = true;
+# Option list for Gain Control Mode
+  - platform: template
+    name: "Gain Control Mode"
+    id: gc
+    icon: mdi:auto-fix
+    options:
+      - "Manual"
+      - "Auto"
+    initial_option: "Auto"
+    optimistic: True
+    on_value:
+      lambda: |-
+        id(espcam).set_agc_mode((esphome::esp32_camera::ESP32GainControlMode)id(gc).active_index().value());
+        id(espcam_update) = true;
+# Option list for Gain Ceiling (apparently this is somewhat equivilant to ISO settings)
+  - platform: template
+    name: "Gain Ceiling"
+    id: g_ceiling
+    options:
+      - "2x"
+      - "4x"
+      - "8x"
+      - "16x"
+      - "32x"
+      - "64x"
+      - "128x"
+    initial_option: "2x"
+    optimistic: True
+    on_value:
+      lambda: |-
+        id(espcam).set_agc_gain_ceiling((esphome::esp32_camera::ESP32AgcGainCeiling)id(g_ceiling).active_index().value());
+        id(espcam_update) = true;
+
+# configure number sliders for these parameters to make them available in HA
+number:
+# While the sliders for Contrast, Brightness, and Saturation all work and change the parameters of the sensor
+# they do not seem to make any difference to the image output
+  - platform: template
+    name: "Contrast"
+    id: contrast
+    icon: mdi:contrast-box
+    min_value: -2
+    max_value: 2
+    step: 1
+    initial_value: 0
+    mode: SLIDER
+    optimistic: True
+    on_value:
+      lambda: |-
+        id(espcam).set_contrast(id(contrast).state);
+        id(espcam_update) = true;
+# Number Slider for Brightness
+  - platform: template
+    name: "Brightness"
+    id: brightness
+    icon: mdi:brightness-6
+    min_value: -2
+    max_value: 2
+    step: 1
+    initial_value: 0
+    mode: SLIDER
+    optimistic: True
+    on_value:
+      lambda: |-
+        id(espcam).set_brightness(id(brightness).state);
+        id(espcam_update) = true;
+# Number Slider for Saturation
+  - platform: template
+    name: "Saturation"
+    id: saturation
+    icon: mdi:palette-outline
+    min_value: -2
+    max_value: 2
+    step: 1
+    initial_value: 0
+    mode: SLIDER
+    optimistic: True
+    on_value:
+      lambda: |-
+        id(espcam).set_saturation(id(saturation).state);
+        id(espcam_update) = true;
+# Number Slider for Gain Value
+  - platform: template
+    name: "Gain Value"
+    id: g_value
+    min_value: 0
+    max_value: 30
+    step: 1
+    initial_value: 0
+    mode: SLIDER
+    optimistic: True
+    on_value:
+      lambda: |-
+        id(espcam).set_agc_value(id(g_value).state);
+        id(espcam_update) = true;
+# Number slider for AE Level
+  - platform: template
+    name: "AE Level"
+    id: ae_level
+    min_value: -2
+    max_value: 2
+    step: 1
+    initial_value: 0
+    mode: SLIDER
+    optimistic: True
+    on_value:
+      lambda: |-
+        id(espcam).set_ae_level(id(ae_level).state);
+        id(espcam_update) = true;
+# Number Slider for AE Value (step set to 10)
+# I tried using steps of 1 (too fine to control) and 100 (to coarse for the values) and settled on 10
+  - platform: template
+    name: "AE Value"
+    id: ae_value
+    min_value: 0
+    max_value: 1200
+    step: 10
+    initial_value: 0
+    mode: SLIDER
+    optimistic: True
+    on_value:
+      lambda: |-
+        id(espcam).set_aec_value(id(ae_value).state);
+        id(espcam_update) = true;
